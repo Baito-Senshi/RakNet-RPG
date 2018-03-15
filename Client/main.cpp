@@ -40,7 +40,10 @@ enum {
 	ID_PLAYER_ONE,
 	ID_PLAYER_TWO,
 	ID_PLAYER_THREE,
+	ID_PLAYER_ATTACK,
+	ID_PLAYER_DEFEND,
 	ID_NETWORK_STATUS_CHANGE,
+	ID_STATS,
 };
 
 enum EPlayerClass
@@ -49,6 +52,30 @@ enum EPlayerClass
 	Mage,
 	Rogue,
 	Cleric,
+};
+
+struct SPlayer
+{
+	std::string m_name;
+	unsigned int m_health;
+	unsigned int m_damage;
+	unsigned int m_defense;
+	EPlayerClass m_class = None;
+	bool m_ready;
+	bool is_turn;
+	bool is_defending;
+
+	//function to send a packet with name/health/class etc
+	void SendName(RakNet::SystemAddress systemAddress, bool isBroadcast)
+	{
+		RakNet::BitStream writeBs;
+		writeBs.Write((RakNet::MessageID)ID_PLAYER_READY);
+		RakNet::RakString name(m_name.c_str());
+		writeBs.Write(name);
+
+		//returns 0 when something is wrong
+		assert(g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, systemAddress, isBroadcast));
+	}
 };
 
 //client
@@ -103,6 +130,58 @@ void DisplayClasses(RakNet::Packet* packet)
 	bs.Read(pName);
 
 	std::cout << pName << " has selected the " << pClass << std::endl;
+}
+
+void GetStats(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	RakNet::RakString pName;
+	bs.Read(pName);
+	EPlayerClass pClass;
+	bs.Read(pClass);
+	int health;
+	bs.Read(health);
+	int damage;
+	bs.Read(damage);
+	int defense;
+	bs.Read(defense);
+	bool turn;
+	bs.Read(turn);
+	bool alive;
+	bs.Read(alive);
+
+	std::cout << pName.C_String() << " the " << pClass << std::endl;
+	std::cout << "Health: " << health << ", Damage: " << damage << ", Defense: " << defense << std::endl;
+	std::cout << "Turn: " << turn << ", Alive: " << alive << std::endl;
+
+}
+
+void PlayerAttack(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	int damage;
+	bs.Read(damage);
+	int health;
+	bs.Read(health);
+
+	std::cout << "THIS MUCH DAMAGE: " << damage << " DONE TO X, HE HAS " << health << " LEFT" << std::endl;
+}
+
+void PlayerDefend(RakNet::Packet* packet)
+{
+	RakNet::BitStream bs(packet->data, packet->length, false);
+	RakNet::MessageID messageId;
+	bs.Read(messageId);
+	int defense;
+	bs.Read(defense);
+	int health;
+	bs.Read(health);
+
+	std::cout << "THIS MUCH HEALTH RESTORTED " << defense << " NOW HE HAS " << health << " LEFT" << std::endl;
 }
 
 unsigned char GetPacketIdentifier(RakNet::Packet *packet)
@@ -325,8 +404,19 @@ void PacketHandler()
 					break;
 				case ID_NETWORK_STATUS_CHANGE:
 					SetNetworkStatus(packet);
+					break;
 				case ID_THEGAME_START:
 					DisplayClasses(packet);
+					break;
+				case ID_STATS:
+					GetStats(packet);
+					break;
+				case ID_PLAYER_ATTACK:
+					PlayerAttack(packet);
+					break;
+				case ID_PLAYER_DEFEND:
+					PlayerDefend(packet);
+					break;
 				default:
 					break;
 				}
@@ -363,7 +453,7 @@ int main()
 
 				g_rakPeerInterface->SetOccasionalPing(true);
 				//"127.0.0.1" = local host = your machines address
-				RakNet::ConnectionAttemptResult car = g_rakPeerInterface->Connect("192.168.8.229", SERVER_PORT, nullptr, 0);
+				RakNet::ConnectionAttemptResult car = g_rakPeerInterface->Connect("10.6.226.230", SERVER_PORT, nullptr, 0);
 				RakAssert(car == RakNet::CONNECTION_ATTEMPT_STARTED);
 				std::cout << "client attempted connection..." << std::endl;
 		}

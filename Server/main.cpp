@@ -40,7 +40,10 @@ enum {
 	ID_PLAYER_ONE,
 	ID_PLAYER_TWO,
 	ID_PLAYER_THREE,
+	ID_PLAYER_ATTACK,
+	ID_PLAYER_DEFEND,
 	ID_NETWORK_STATUS_CHANGE,
+	ID_STATS,
 };
 
 enum EPlayerClass
@@ -60,7 +63,7 @@ struct SPlayer
 	EPlayerClass m_class = None;
 	bool m_ready;
 	bool is_turn;
-	bool is_defending;
+	bool is_alive;
 
 	//function to send a packet with name/health/class etc
 	void SendName(RakNet::SystemAddress systemAddress, bool isBroadcast)
@@ -73,9 +76,27 @@ struct SPlayer
 		//returns 0 when something is wrong
 		assert(g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, systemAddress, isBroadcast));
 	}
+
+	void SendStats(RakNet::SystemAddress systemAddress, bool isBroadcast, RakNet::MessageID id)
+	{
+		RakNet::BitStream writeBs;
+		writeBs.Write((RakNet::MessageID)id);
+		RakNet::RakString name(m_name.c_str());
+		writeBs.Write(name);
+		writeBs.Write(m_class);
+		writeBs.Write(m_health);
+		writeBs.Write(m_damage);
+		writeBs.Write(m_defense);
+		writeBs.Write(is_turn);
+		writeBs.Write(is_alive);
+
+		//returns 0 when something is wrong
+		assert(g_rakPeerInterface->Send(&writeBs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, systemAddress, isBroadcast));
+	}
 };
 
 std::map<unsigned long, SPlayer> m_players;
+std::map<unsigned int, SPlayer> playerNumbers;
 std::map<unsigned long, RakNet::SystemAddress> m_addresses;
 
 SPlayer& GetPlayer(RakNet::RakNetGUID raknetId)
@@ -124,6 +145,7 @@ void OnLobbyReady(RakNet::Packet* packet)
 	player.m_name = userName;
 	player.m_ready = true;
 	std::cout << "Player " << playerNumber << " aka " << player.m_name.c_str() << " IS READY!!!!!" << std::endl;
+	playerNumbers.insert(std::make_pair(playerNumber, player));
 
 	//notify all other connected players that this plyer has joined the game
 	int counter = 0;
@@ -216,12 +238,8 @@ void SetPlayerStats(RakNet::Packet * packet)
 		}
 	}
 
-	std::cout << "Counter: " << counter << std::endl;
-
 	if (counter == 0)
 	{
-
-		std::cout << "Somehowin here? " << counter << std::endl;
 		RakNet::BitStream bs;
 		bs.Write((RakNet::MessageID)ID_NETWORK_STATUS_CHANGE);
 		NetworkState gState(NS_Player_One);
@@ -231,6 +249,14 @@ void SetPlayerStats(RakNet::Packet * packet)
 		std::map<unsigned long, SPlayer>::iterator it = m_players.begin();
 		assert(g_rakPeerInterface->Send(&bs, HIGH_PRIORITY, RELIABLE_ORDERED, 0, GetAddress(it->first) , true));
 
+		int j = 1;
+		for (std::map<unsigned long, SPlayer>::iterator it = m_players.begin(); it != m_players.end(); ++it)
+		{
+			SPlayer& player = it->second;
+			std::map<unsigned int, SPlayer>::iterator it2 = playerNumbers.find(j);
+			it2->second = player;
+			j++;
+		}
 	}
 }
 
@@ -246,27 +272,61 @@ void ResolvePlayerOne(RakNet::Packet* packet)
 	unsigned long guid = RakNet::RakNetGUID::ToUint32(packet->guid);
 	SPlayer& player = GetPlayer(packet->guid);
 
-	std::string uClass;
+	std::map<unsigned int, SPlayer>::iterator it2 = playerNumbers.find(2);
+	std::map<unsigned int, SPlayer>::iterator it3 = playerNumbers.find(3);
+
+
 	if (aSelect == "1")
 	{
+		it2->second.m_health -= player.m_damage;
 
+		RakNet::BitStream ws;
+		ws.Write((RakNet::MessageID)ID_PLAYER_ATTACK);
+		int damage(player.m_damage);
+		ws.Write(damage);
+		int health(it2->second.m_health);
+		ws.Write(health);
+
+		assert(g_rakPeerInterface->Send(&ws, HIGH_PRIORITY, RELIABLE_ORDERED, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true));
+
+		std::cout << "TESTING 1" << std::endl;
 	}
 	if (aSelect == "2")
 	{
+		it3->second.m_health -= player.m_damage;
 
+
+		RakNet::BitStream ws;
+		ws.Write((RakNet::MessageID)ID_PLAYER_ATTACK);
+		int damage(player.m_damage);
+		ws.Write(damage);
+		int health(it3->second.m_health);
+		ws.Write(health);
+		std::cout << "TESTING 2" << std::endl;
+		assert(g_rakPeerInterface->Send(&ws, HIGH_PRIORITY, RELIABLE_ORDERED, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true));
 	}
 	if (aSelect == "3")
 	{
-		player.m_health += player.m_defense / 2;
-		player.is_defending = true;
+		player.m_health += player.m_defense;
+		std::cout << "TESTING 3" << std::endl;
+		RakNet::BitStream ws;
+		ws.Write((RakNet::MessageID)ID_PLAYER_DEFEND);
+		int defense(player.m_defense);
+		ws.Write(defense);
+		int health(player.m_health);
+		ws.Write(health);
+
+		assert(g_rakPeerInterface->Send(&ws, HIGH_PRIORITY, RELIABLE_ORDERED, 0, RakNet::UNASSIGNED_SYSTEM_ADDRESS, true));
 	}
 	if (aSelect == "4")
 	{
-
+		std::cout << "TESTING 4" << std::endl;
+		it2->second.SendStats(packet->systemAddress, false, ID_STATS);
 	}
 	if (aSelect == "5")
 	{
-
+		std::cout << "TESTING 5" << std::endl;
+		it3->second.SendStats(packet->systemAddress, false, ID_STATS);
 	}
 }
 
